@@ -50,7 +50,9 @@ import sys
 #----- PROTECTED REGION END -----#	//	LManalysis.additionnal_import
 
 # Device States Description
-# No states for this device
+# ON : Server is ready
+# OFF : 
+# FAULT : 
 
 
 class LManalysis (PyTango.LatestDeviceImpl):
@@ -79,6 +81,15 @@ class LManalysis (PyTango.LatestDeviceImpl):
         self.debug_stream("In init_device()")
         self.get_device_properties(self.get_device_class())
         self.attr_max_x_read = 0.0
+        self.attr_max_y_read = 0.0
+        self.attr_max_intensity_read = 0.0
+        self.attr_com_x_read = 0.0
+        self.attr_com_y_read = 0.0
+        self.attr_fwhm_x_read = 0.0
+        self.attr_fwhm_y_read = 0.0
+        self.attr_roi_sum_read = 0.0
+        self.attr_scan_parameter_read = ""
+        self.attr_value_read = 0.0
         #----- PROTECTED REGION ID(LManalysis.init_device) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LManalysis.init_device
@@ -99,6 +110,76 @@ class LManalysis (PyTango.LatestDeviceImpl):
         attr.set_value(self.attr_max_x_read)
         
         #----- PROTECTED REGION END -----#	//	LManalysis.max_x_read
+        
+    def read_max_y(self, attr):
+        self.debug_stream("In read_max_y()")
+        #----- PROTECTED REGION ID(LManalysis.max_y_read) ENABLED START -----#
+        attr.set_value(self.attr_max_y_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.max_y_read
+        
+    def read_max_intensity(self, attr):
+        self.debug_stream("In read_max_intensity()")
+        #----- PROTECTED REGION ID(LManalysis.max_intensity_read) ENABLED START -----#
+        attr.set_value(self.attr_max_intensity_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.max_intensity_read
+        
+    def read_com_x(self, attr):
+        self.debug_stream("In read_com_x()")
+        #----- PROTECTED REGION ID(LManalysis.com_x_read) ENABLED START -----#
+        attr.set_value(self.attr_com_x_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.com_x_read
+        
+    def read_com_y(self, attr):
+        self.debug_stream("In read_com_y()")
+        #----- PROTECTED REGION ID(LManalysis.com_y_read) ENABLED START -----#
+        attr.set_value(self.attr_com_y_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.com_y_read
+        
+    def read_fwhm_x(self, attr):
+        self.debug_stream("In read_fwhm_x()")
+        #----- PROTECTED REGION ID(LManalysis.fwhm_x_read) ENABLED START -----#
+        attr.set_value(self.attr_fwhm_x_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.fwhm_x_read
+        
+    def read_fwhm_y(self, attr):
+        self.debug_stream("In read_fwhm_y()")
+        #----- PROTECTED REGION ID(LManalysis.fwhm_y_read) ENABLED START -----#
+        attr.set_value(self.attr_fwhm_y_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.fwhm_y_read
+        
+    def read_roi_sum(self, attr):
+        self.debug_stream("In read_roi_sum()")
+        #----- PROTECTED REGION ID(LManalysis.roi_sum_read) ENABLED START -----#
+        attr.set_value(self.attr_roi_sum_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.roi_sum_read
+        
+    def read_scan_parameter(self, attr):
+        self.debug_stream("In read_scan_parameter()")
+        #----- PROTECTED REGION ID(LManalysis.scan_parameter_read) ENABLED START -----#
+        attr.set_value(self.attr_scan_parameter_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.scan_parameter_read
+        
+    def write_scan_parameter(self, attr):
+        self.debug_stream("In write_scan_parameter()")
+        data = attr.get_write_value()
+        #----- PROTECTED REGION ID(LManalysis.scan_parameter_write) ENABLED START -----#
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.scan_parameter_write
+        
+    def read_value(self, attr):
+        self.debug_stream("In read_value()")
+        #----- PROTECTED REGION ID(LManalysis.value_read) ENABLED START -----#
+        attr.set_value(self.attr_value_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.value_read
         
     
     
@@ -121,6 +202,14 @@ class LManalysis (PyTango.LatestDeviceImpl):
         #----- PROTECTED REGION ID(LManalysis.Start) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LManalysis.Start
+        
+    def Stop(self):
+        """ 
+        """
+        self.debug_stream("In Stop()")
+        #----- PROTECTED REGION ID(LManalysis.Stop) ENABLED START -----#
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.Stop
         
 
     #----- PROTECTED REGION ID(LManalysis.programmer_methods) ENABLED START -----#
@@ -157,6 +246,9 @@ class LManalysisClass(PyTango.DeviceClass):
         'Start':
             [[PyTango.DevVoid, "none"],
             [PyTango.DevVoid, "none"]],
+        'Stop':
+            [[PyTango.DevVoid, "none"],
+            [PyTango.DevVoid, "none"]],
         }
 
 
@@ -171,6 +263,57 @@ class LManalysisClass(PyTango.DeviceClass):
                 'display unit': "px",
                 'description': "x coordinate of maxumum",
             } ],
+        'max_y':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ],
+            {
+                'unit': "px",
+                'display unit': "px",
+            } ],
+        'max_intensity':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ]],
+        'com_x':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ]],
+        'com_y':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ]],
+        'fwhm_x':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ],
+            {
+                'unit': "px",
+                'display unit': "px",
+            } ],
+        'fwhm_y':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ],
+            {
+                'unit': "px",
+                'display unit': "px",
+            } ],
+        'roi_sum':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ]],
+        'scan_parameter':
+            [[PyTango.DevString,
+            PyTango.SCALAR,
+            PyTango.READ_WRITE],
+            {
+                'Memorized':"true_without_hard_applied"
+            } ],
+        'value':
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ]],
         }
 
 
