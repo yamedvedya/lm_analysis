@@ -55,6 +55,135 @@ import sys
 # FAULT : 
 
 
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# ----------------------------------------------------------------------
+# Author:        patrick.loemker@desy.de
+# Last modified: 2018, July 10
+# ----------------------------------------------------------------------
+
+"""TangotoTine camera proxy
+"""
+
+import numpy as np
+import scipy.ndimage.measurements as scipymeasure
+import PyTango
+import time
+from threading import Thread
+
+POLL_PERIOD = 200
+
+# ----------------------------------------------------------------------
+def FWHM(array):
+    try:
+        half_max = (np.amax(array) - np.amin(array)) / 2
+        diff = np.sign(array - half_max)
+        left_idx = np.where(diff > 0)[0][0]
+        right_idx = np.where(diff > 0)[0][-1]
+        return right_idx - left_idx
+    except:
+        return 0
+
+# ----------------------------------------------------------------------
+class TangoTineCamera(object):
+    """Proxy to a physical TANGO camera.
+    """
+
+    # ----------------------------------------------------------------------
+    def __init__(self, tango_server, roi):
+        super(TangoTineCamera, self).__init__()
+
+        self._device_proxy = PyTango.DeviceProxy(str(tango_server))
+
+        self._last_frame = np.zeros((1, 1))
+        self._roi = roi
+
+        self._eid = None
+        self._state = 'idle'
+
+        self._last_refresh = time.time()
+
+        self.max_i = 0
+        self.max_x = 0
+        self.max_y = 0
+        self.com_x = 0
+        self.com_y = 0
+        self.fwhm_x = 0
+        self.fwhm_y = 0
+        self.sum = 0
+
+    # ----------------------------------------------------------------------
+    def set_new_roi(self, roi):
+        self._roi = roi
+
+    # ----------------------------------------------------------------------
+    def start(self):
+
+        if not self._device_proxy.is_attribute_polled('Frame'):
+            self._device_proxy.poll_attribute('Frame', POLL_PERIOD)
+        else:
+            if not self._device_proxy.get_attribute_poll_period("Frame") == POLL_PERIOD:
+                self._device_proxy.stop_poll_attribute("Frame")
+                self._device_proxy.poll_attribute('Frame', POLL_PERIOD)
+
+        self._eid = self._device_proxy.subscribe_event("Frame", PyTango.EventType.PERIODIC_EVENT, self._readoutFrame)
+
+        self._state = 'running'
+
+    # ----------------------------------------------------------------------
+    def stop(self):
+
+        if self._eid is not None:
+            self._device_proxy.unsubscribe_event(self._eid)
+
+        self._state = 'idle'
+
+    # ----------------------------------------------------------------------
+    def _readoutFrame(self, event):
+        """Called each time new frame is available.
+        """
+        data = event.device.read_attribute(event.attr_name.split('/')[6])
+        self._last_frame = np.transpose(data.value)
+        self._analyse_image()
+        self._last_refresh = time.time()
+
+    # ----------------------------------------------------------------------
+    def _analyse_image(self):
+        if self._roi is not None:
+            x, y, w, h, = self._roi
+            roi_array = self._last_frame[x:x + w, y:y + h]
+        else:
+            roi_array = self._last_frame
+
+        self.sum = np.sum(roi_array)
+
+        roiExtrema = scipymeasure.extrema(roi_array)  # all in one!
+        self.max_i = roiExtrema[1]
+        self.max_x = roiExtrema[3][0]
+        self.max_y = roiExtrema[3][1]
+
+        roiCoM = scipymeasure.center_of_mass(roi_array)
+        self.com_x = roiCoM[0]
+        self.com_y = roiCoM[1]
+
+        self.fwhm_x = FWHM(np.sum(roi_array, axis=0))
+        self.fwhm_y = FWHM(np.sum(roi_array, axis=1))
+
+    # ----------------------------------------------------------------------
+    def _read_frame(self):
+        self._last_frame = self._device_proxy.Frame
+        self._analyse_image()
+        self._last_refresh = time.time()
+
+    # ----------------------------------------------------------------------
+    def get_data(self, attr):
+        if self._state != 'running' and time.time() - self._last_refresh > self.POLL_PERIOD/1000:
+            self._read_frame()
+
+        return getattr(self, attr)
+
+
 class LManalysis (PyTango.LatestDeviceImpl):
     """"""
     
@@ -67,10 +196,28 @@ class LManalysis (PyTango.LatestDeviceImpl):
         PyTango.LatestDeviceImpl.__init__(self,cl,name)
         self.debug_stream("In __init__()")
         LManalysis.init_device(self)
+
+        self.camera = TangoTineCamera(self.CameraDevice, None)
+        self._refresh_thread = Thread(target=self._refresh_data)
+        self._refresh_thread_state = 'stopped'
+
         #----- PROTECTED REGION ID(LManalysis.__init__) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LManalysis.__init__
-        
+
+    def _refresh_data(self):
+        while self._refresh_thread_state != 'stopped':
+            time.sleep(POLL_PERIOD/1000)
+            self.attr_max_x_read = self.camera.get_data('max_x')
+            self.attr_max_y_read = self.camera.get_data('max_y')
+            self.attr_max_intensity_read = self.camera.get_data('max_i')
+            self.attr_com_x_read = self.camera.get_data('com_x')
+            self.attr_com_y_read = self.camera.get_data('com_y')
+            self.attr_fwhm_x_read = self.camera.get_data('fwhm_x')
+            self.attr_fwhm_y_read = self.camera.get_data('fwhm_y')
+            self.attr_roi_sum_read = self.camera.get_data('sum')
+
+
     def delete_device(self):
         self.debug_stream("In delete_device()")
         #----- PROTECTED REGION ID(LManalysis.delete_device) ENABLED START -----#
@@ -90,6 +237,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         self.attr_roi_sum_read = 0.0
         self.attr_scan_parameter_read = ""
         self.attr_value_read = 0.0
+        self.attr_roi_read = 0
         #----- PROTECTED REGION ID(LManalysis.init_device) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LManalysis.init_device
@@ -106,6 +254,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
     
     def read_max_x(self, attr):
         self.debug_stream("In read_max_x()")
+        self.attr_max_x_read = self.camera.get_data('max_x')
         #----- PROTECTED REGION ID(LManalysis.max_x_read) ENABLED START -----#
         attr.set_value(self.attr_max_x_read)
         
@@ -113,6 +262,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def read_max_y(self, attr):
         self.debug_stream("In read_max_y()")
+        self.attr_max_y_read = self.camera.get_data('max_y')
         #----- PROTECTED REGION ID(LManalysis.max_y_read) ENABLED START -----#
         attr.set_value(self.attr_max_y_read)
         
@@ -120,6 +270,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def read_max_intensity(self, attr):
         self.debug_stream("In read_max_intensity()")
+        self.attr_max_intensity_read = self.camera.get_data('max_i')
         #----- PROTECTED REGION ID(LManalysis.max_intensity_read) ENABLED START -----#
         attr.set_value(self.attr_max_intensity_read)
         
@@ -127,6 +278,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def read_com_x(self, attr):
         self.debug_stream("In read_com_x()")
+        self.attr_com_x_read = self.camera.get_data('com_x')
         #----- PROTECTED REGION ID(LManalysis.com_x_read) ENABLED START -----#
         attr.set_value(self.attr_com_x_read)
         
@@ -134,6 +286,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def read_com_y(self, attr):
         self.debug_stream("In read_com_y()")
+        self.attr_com_y_read = self.camera.get_data('com_y')
         #----- PROTECTED REGION ID(LManalysis.com_y_read) ENABLED START -----#
         attr.set_value(self.attr_com_y_read)
         
@@ -141,6 +294,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def read_fwhm_x(self, attr):
         self.debug_stream("In read_fwhm_x()")
+        self.attr_fwhm_x_read = self.camera.get_data('fwhm_x')
         #----- PROTECTED REGION ID(LManalysis.fwhm_x_read) ENABLED START -----#
         attr.set_value(self.attr_fwhm_x_read)
         
@@ -148,6 +302,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def read_fwhm_y(self, attr):
         self.debug_stream("In read_fwhm_y()")
+        self.attr_fwhm_y_read = self.camera.get_data('fwhm_y')
         #----- PROTECTED REGION ID(LManalysis.fwhm_y_read) ENABLED START -----#
         attr.set_value(self.attr_fwhm_y_read)
         
@@ -155,6 +310,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def read_roi_sum(self, attr):
         self.debug_stream("In read_roi_sum()")
+        self.attr_roi_sum_read = self.camera.get_data('sum')
         #----- PROTECTED REGION ID(LManalysis.roi_sum_read) ENABLED START -----#
         attr.set_value(self.attr_roi_sum_read)
         
@@ -169,7 +325,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
     def write_scan_parameter(self, attr):
         self.debug_stream("In write_scan_parameter()")
-        data = attr.get_write_value()
+        self.attr_scan_parameter_read = attr.get_write_value()
         #----- PROTECTED REGION ID(LManalysis.scan_parameter_write) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LManalysis.scan_parameter_write
@@ -181,9 +337,20 @@ class LManalysis (PyTango.LatestDeviceImpl):
         
         #----- PROTECTED REGION END -----#	//	LManalysis.value_read
         
-    
-    
-            
+    def read_roi(self, attr):
+        self.debug_stream("In read_roi()")
+        #----- PROTECTED REGION ID(LManalysis.roi_read) ENABLED START -----#
+        attr.set_value(self.attr_roi_read)
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.roi_read
+        
+    def write_roi(self, attr):
+        self.debug_stream("In write_roi()")
+        self.attr_roi_read = attr.get_write_value()
+        #----- PROTECTED REGION ID(LManalysis.roi_write) ENABLED START -----#
+        
+        #----- PROTECTED REGION END -----#	//	LManalysis.roi_write
+
     def read_attr_hardware(self, data):
         self.debug_stream("In read_attr_hardware()")
         #----- PROTECTED REGION ID(LManalysis.read_attr_hardware) ENABLED START -----#
@@ -199,6 +366,9 @@ class LManalysis (PyTango.LatestDeviceImpl):
         """ does analysis of last frame
         """
         self.debug_stream("In Start()")
+        self._refresh_thread_state = 'runnig'
+        self._refresh_thread.start()
+
         #----- PROTECTED REGION ID(LManalysis.Start) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LManalysis.Start
@@ -207,6 +377,7 @@ class LManalysis (PyTango.LatestDeviceImpl):
         """ 
         """
         self.debug_stream("In Stop()")
+        self._refresh_thread_state = 'stopped'
         #----- PROTECTED REGION ID(LManalysis.Stop) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LManalysis.Stop
@@ -230,10 +401,6 @@ class LManalysisClass(PyTango.DeviceClass):
 
     #    Device Properties
     device_property_list = {
-        'ROI':
-            [PyTango.DevVarShortArray, 
-            "ROI coordinates: (x, y, h, w)",
-            [(0, 0, 0, 0)]],
         'CameraDevice':
             [PyTango.DevString, 
             "Adress of related camera tango server",
@@ -314,6 +481,13 @@ class LManalysisClass(PyTango.DeviceClass):
             [[PyTango.DevDouble,
             PyTango.SCALAR,
             PyTango.READ]],
+        'roi':
+            [[PyTango.DevLong,
+            PyTango.SCALAR,
+            PyTango.READ_WRITE],
+            {
+                'Memorized':"true_without_hard_applied"
+            } ],
         }
 
 
