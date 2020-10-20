@@ -6,7 +6,7 @@
 #  license :
 # ============================================================================
 #
-#  File :        LManalysis.py
+#  File :        LMAnalysis.py
 #
 #  Project :     LM_analysis
 #
@@ -26,7 +26,7 @@
 # along with Tango.  If not, see <http://www.gnu.org/licenses/>.
 # 
 #
-#  $Author :      yury.matveev$
+#  $Author :      yury.matveev@desy.de$
 #
 #  $Revision :    $
 #
@@ -38,16 +38,16 @@
 #     (Program Obviously used to Generate tango Object)
 # ############################################################################
 
-__all__ = ["LManalysis", "LManalysisClass", "main"]
+__all__ = ["LMAnalysis", "LManalysisClass", "main"]
 
 __docformat__ = 'restructuredtext'
 
 import PyTango
 import sys
 # Add additional import
-#----- PROTECTED REGION ID(LManalysis.additionnal_import) ENABLED START -----#
+#----- PROTECTED REGION ID(LMAnalysis.additionnal_import) ENABLED START -----#
 
-#----- PROTECTED REGION END -----#	//	LManalysis.additionnal_import
+#----- PROTECTED REGION END -----#	//	LMAnalysis.additionnal_import
 
 # Device States Description
 # ON : Server is ready
@@ -71,6 +71,8 @@ import scipy.ndimage.measurements as scipymeasure
 import PyTango
 import time
 from threading import Thread
+from tango import AttrQuality, AttrWriteType, DispLevel, DevState, DebugIt
+
 
 POLL_PERIOD = 200
 
@@ -94,8 +96,6 @@ class TangoTineCamera(object):
     def __init__(self, tango_server, roi):
         super(TangoTineCamera, self).__init__()
 
-        self._device_proxy = PyTango.DeviceProxy(str(tango_server))
-
         self._last_frame = np.zeros((1, 1))
         self._roi = roi
 
@@ -113,6 +113,11 @@ class TangoTineCamera(object):
         self.fwhm_y = 0
         self.sum = 0
 
+        try:
+            self.device_proxy = PyTango.DeviceProxy(str(tango_server))
+        except:
+            self.device_proxy = None
+
     # ----------------------------------------------------------------------
     def set_new_roi(self, roi):
         self._roi = roi
@@ -120,14 +125,14 @@ class TangoTineCamera(object):
     # ----------------------------------------------------------------------
     def start(self):
 
-        if not self._device_proxy.is_attribute_polled('Frame'):
-            self._device_proxy.poll_attribute('Frame', POLL_PERIOD)
+        if not self.device_proxy.is_attribute_polled('Frame'):
+            self.device_proxy.poll_attribute('Frame', POLL_PERIOD)
         else:
-            if not self._device_proxy.get_attribute_poll_period("Frame") == POLL_PERIOD:
-                self._device_proxy.stop_poll_attribute("Frame")
-                self._device_proxy.poll_attribute('Frame', POLL_PERIOD)
+            if not self.device_proxy.get_attribute_poll_period("Frame") == POLL_PERIOD:
+                self.device_proxy.stop_poll_attribute("Frame")
+                self.device_proxy.poll_attribute('Frame', POLL_PERIOD)
 
-        self._eid = self._device_proxy.subscribe_event("Frame", PyTango.EventType.PERIODIC_EVENT, self._readoutFrame)
+        self._eid = self.device_proxy.subscribe_event("Frame", PyTango.EventType.PERIODIC_EVENT, self._readoutFrame)
 
         self._state = 'running'
 
@@ -135,7 +140,7 @@ class TangoTineCamera(object):
     def stop(self):
 
         if self._eid is not None:
-            self._device_proxy.unsubscribe_event(self._eid)
+            self.device_proxy.unsubscribe_event(self._eid)
 
         self._state = 'idle'
 
@@ -151,14 +156,17 @@ class TangoTineCamera(object):
     # ----------------------------------------------------------------------
     def _analyse_image(self):
         if self._roi is not None:
-            x, y, w, h, = self._roi
-            roi_array = self._last_frame[x:x + w, y:y + h]
+            try:
+                x, y, w, h, = self._roi
+                roi_array = self._last_frame[x:x + w, y:y + h]
+            except:
+                roi_array = self._last_frame
         else:
             roi_array = self._last_frame
 
         self.sum = np.sum(roi_array)
 
-        roiExtrema = scipymeasure.extrema(roi_array)  # all in one!
+        roiExtrema = scipymeasure.extrema(roi_array)
         self.max_i = roiExtrema[1]
         self.max_x = roiExtrema[3][0]
         self.max_y = roiExtrema[3][1]
@@ -172,38 +180,43 @@ class TangoTineCamera(object):
 
     # ----------------------------------------------------------------------
     def _read_frame(self):
-        self._last_frame = self._device_proxy.Frame
+        self._last_frame = self.device_proxy.Frame
         self._analyse_image()
         self._last_refresh = time.time()
 
     # ----------------------------------------------------------------------
     def get_data(self, attr):
-        if self._state != 'running' and time.time() - self._last_refresh > self.POLL_PERIOD/1000:
+        if self._state != 'running' and time.time() - self._last_refresh > POLL_PERIOD/1000:
             self._read_frame()
 
         return getattr(self, attr)
 
 
-class LManalysis (PyTango.LatestDeviceImpl):
+class LMAnalysis (PyTango.LatestDeviceImpl):
     """"""
     
     # -------- Add you global variables here --------------------------
-    #----- PROTECTED REGION ID(LManalysis.global_variables) ENABLED START -----#
+    #----- PROTECTED REGION ID(LMAnalysis.global_variables) ENABLED START -----#
     
-    #----- PROTECTED REGION END -----#	//	LManalysis.global_variables
+    #----- PROTECTED REGION END -----#	//	LMAnalysis.global_variables
 
     def __init__(self, cl, name):
         PyTango.LatestDeviceImpl.__init__(self,cl,name)
         self.debug_stream("In __init__()")
-        LManalysis.init_device(self)
+        LMAnalysis.init_device(self)
 
         self.camera = TangoTineCamera(self.CameraDevice, None)
+        if self.camera.device_proxy is None:
+            self.set_state(DevState.FAULT)
+        else:
+            self.set_state(DevState.ON)
+
         self._refresh_thread = Thread(target=self._refresh_data)
         self._refresh_thread_state = 'stopped'
 
-        #----- PROTECTED REGION ID(LManalysis.__init__) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.__init__) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.__init__
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.__init__
 
     def _refresh_data(self):
         while self._refresh_thread_state != 'stopped':
@@ -220,9 +233,9 @@ class LManalysis (PyTango.LatestDeviceImpl):
 
     def delete_device(self):
         self.debug_stream("In delete_device()")
-        #----- PROTECTED REGION ID(LManalysis.delete_device) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.delete_device) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.delete_device
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.delete_device
 
     def init_device(self):
         self.debug_stream("In init_device()")
@@ -237,161 +250,221 @@ class LManalysis (PyTango.LatestDeviceImpl):
         self.attr_roi_sum_read = 0.0
         self.attr_scan_parameter_read = ""
         self.attr_value_read = 0.0
-        self.attr_roi_read = 0
-        #----- PROTECTED REGION ID(LManalysis.init_device) ENABLED START -----#
+        self.attr_roi_x_read = 0
+        self.attr_roi_y_read = 0
+        self.attr_roi_h_read = 0
+        self.attr_roi_w_read = 0
+        #----- PROTECTED REGION ID(LMAnalysis.init_device) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.init_device
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.init_device
 
     def always_executed_hook(self):
         self.debug_stream("In always_excuted_hook()")
-        #----- PROTECTED REGION ID(LManalysis.always_executed_hook) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.always_executed_hook) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.always_executed_hook
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.always_executed_hook
 
     # -------------------------------------------------------------------------
-    #    LManalysis read/write attribute methods
+    #    LMAnalysis read/write attribute methods
     # -------------------------------------------------------------------------
     
     def read_max_x(self, attr):
         self.debug_stream("In read_max_x()")
         self.attr_max_x_read = self.camera.get_data('max_x')
-        #----- PROTECTED REGION ID(LManalysis.max_x_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.max_x_read) ENABLED START -----#
         attr.set_value(self.attr_max_x_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.max_x_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.max_x_read
         
     def read_max_y(self, attr):
         self.debug_stream("In read_max_y()")
         self.attr_max_y_read = self.camera.get_data('max_y')
-        #----- PROTECTED REGION ID(LManalysis.max_y_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.max_y_read) ENABLED START -----#
         attr.set_value(self.attr_max_y_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.max_y_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.max_y_read
         
     def read_max_intensity(self, attr):
         self.debug_stream("In read_max_intensity()")
         self.attr_max_intensity_read = self.camera.get_data('max_i')
-        #----- PROTECTED REGION ID(LManalysis.max_intensity_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.max_intensity_read) ENABLED START -----#
         attr.set_value(self.attr_max_intensity_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.max_intensity_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.max_intensity_read
         
     def read_com_x(self, attr):
         self.debug_stream("In read_com_x()")
         self.attr_com_x_read = self.camera.get_data('com_x')
-        #----- PROTECTED REGION ID(LManalysis.com_x_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.com_x_read) ENABLED START -----#
         attr.set_value(self.attr_com_x_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.com_x_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.com_x_read
         
     def read_com_y(self, attr):
         self.debug_stream("In read_com_y()")
         self.attr_com_y_read = self.camera.get_data('com_y')
-        #----- PROTECTED REGION ID(LManalysis.com_y_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.com_y_read) ENABLED START -----#
         attr.set_value(self.attr_com_y_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.com_y_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.com_y_read
         
     def read_fwhm_x(self, attr):
         self.debug_stream("In read_fwhm_x()")
         self.attr_fwhm_x_read = self.camera.get_data('fwhm_x')
-        #----- PROTECTED REGION ID(LManalysis.fwhm_x_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.fwhm_x_read) ENABLED START -----#
         attr.set_value(self.attr_fwhm_x_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.fwhm_x_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.fwhm_x_read
         
     def read_fwhm_y(self, attr):
         self.debug_stream("In read_fwhm_y()")
         self.attr_fwhm_y_read = self.camera.get_data('fwhm_y')
-        #----- PROTECTED REGION ID(LManalysis.fwhm_y_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.fwhm_y_read) ENABLED START -----#
         attr.set_value(self.attr_fwhm_y_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.fwhm_y_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.fwhm_y_read
         
     def read_roi_sum(self, attr):
         self.debug_stream("In read_roi_sum()")
         self.attr_roi_sum_read = self.camera.get_data('sum')
-        #----- PROTECTED REGION ID(LManalysis.roi_sum_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.roi_sum_read) ENABLED START -----#
         attr.set_value(self.attr_roi_sum_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.roi_sum_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.roi_sum_read
         
     def read_scan_parameter(self, attr):
         self.debug_stream("In read_scan_parameter()")
-        #----- PROTECTED REGION ID(LManalysis.scan_parameter_read) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.scan_parameter_read) ENABLED START -----#
         attr.set_value(self.attr_scan_parameter_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.scan_parameter_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.scan_parameter_read
         
     def write_scan_parameter(self, attr):
         self.debug_stream("In write_scan_parameter()")
         self.attr_scan_parameter_read = attr.get_write_value()
-        #----- PROTECTED REGION ID(LManalysis.scan_parameter_write) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.scan_parameter_write) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.scan_parameter_write
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.scan_parameter_write
         
     def read_value(self, attr):
         self.debug_stream("In read_value()")
-        #----- PROTECTED REGION ID(LManalysis.value_read) ENABLED START -----#
+        try:
+            self.attr_value_read = self.camera.get_data(self.attr_scan_parameter_read)
+        except:
+            self.attr_value_read = 0
+        #----- PROTECTED REGION ID(LMAnalysis.value_read) ENABLED START -----#
         attr.set_value(self.attr_value_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.value_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.value_read
         
-    def read_roi(self, attr):
-        self.debug_stream("In read_roi()")
-        #----- PROTECTED REGION ID(LManalysis.roi_read) ENABLED START -----#
-        attr.set_value(self.attr_roi_read)
+    def read_roi_x(self, attr):
+        self.debug_stream("In read_roi_x()")
+        #----- PROTECTED REGION ID(LMAnalysis.roi_read) ENABLED START -----#
+        attr.set_value(self.attr_roi_x_read)
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.roi_read
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.roi_read
         
-    def write_roi(self, attr):
-        self.debug_stream("In write_roi()")
-        self.attr_roi_read = attr.get_write_value()
-        #----- PROTECTED REGION ID(LManalysis.roi_write) ENABLED START -----#
+    def write_roi_x(self, attr):
+        self.debug_stream("In write_roi_x()")
+        self.attr_roi_x_read = attr.get_write_value()
+        self.camera.set_new_roi([self.attr_roi_x_read, self.attr_roi_y_read,
+                                 self.attr_roi_h_read, self.attr_roi_w_read])
+        #----- PROTECTED REGION ID(LMAnalysis.roi_write) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.roi_write
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.roi_write
+
+    def read_roi_y(self, attr):
+        self.debug_stream("In read_roi_y()")
+        # ----- PROTECTED REGION ID(LMAnalysis.roi_read) ENABLED START -----#
+        attr.set_value(self.attr_roi_y_read)
+
+        # ----- PROTECTED REGION END -----#	//	LMAnalysis.roi_read
+
+    def write_roi_y(self, attr):
+        self.debug_stream("In write_roi_y()")
+        self.attr_roi_y_read = attr.get_write_value()
+        self.camera.set_new_roi([self.attr_roi_x_read, self.attr_roi_y_read,
+                                 self.attr_roi_h_read, self.attr_roi_w_read])
+        # ----- PROTECTED REGION ID(LMAnalysis.roi_write) ENABLED START -----#
+
+        # ----- PROTECTED REGION END -----#	//	LMAnalysis.roi_write
+
+    def read_roi_w(self, attr):
+        self.debug_stream("In read_roi_w()")
+        # ----- PROTECTED REGION ID(LMAnalysis.roi_read) ENABLED START -----#
+        attr.set_value(self.attr_roi_w_read)
+
+        # ----- PROTECTED REGION END -----#	//	LMAnalysis.roi_read
+
+    def write_roi_w(self, attr):
+        self.debug_stream("In write_roi_w()")
+        self.attr_roi_w_read = attr.get_write_value()
+        self.camera.set_new_roi([self.attr_roi_x_read, self.attr_roi_y_read,
+                                 self.attr_roi_h_read, self.attr_roi_w_read])
+        # ----- PROTECTED REGION ID(LMAnalysis.roi_write) ENABLED START -----#
+
+        # ----- PROTECTED REGION END -----#	//	LMAnalysis.roi_write
+
+    def read_roi_h(self, attr):
+        self.debug_stream("In read_roi_h()")
+        # ----- PROTECTED REGION ID(LMAnalysis.roi_read) ENABLED START -----#
+        attr.set_value(self.attr_roi_h_read)
+
+        # ----- PROTECTED REGION END -----#	//	LMAnalysis.roi_read
+
+    def write_roi_h(self, attr):
+        self.debug_stream("In write_roi_h()")
+        self.attr_roi_h_read = attr.get_write_value()
+        self.camera.set_new_roi([self.attr_roi_x_read, self.attr_roi_y_read,
+                                 self.attr_roi_h_read, self.attr_roi_w_read])
+        # ----- PROTECTED REGION ID(LMAnalysis.roi_write) ENABLED START -----#
+
+        # ----- PROTECTED REGION END -----#	//	LMAnalysis.roi_write
 
     def read_attr_hardware(self, data):
         self.debug_stream("In read_attr_hardware()")
-        #----- PROTECTED REGION ID(LManalysis.read_attr_hardware) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.read_attr_hardware) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.read_attr_hardware
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.read_attr_hardware
 
 
     # -------------------------------------------------------------------------
-    #    LManalysis command methods
+    #    LMAnalysis command methods
     # -------------------------------------------------------------------------
     
     def Start(self):
         """ does analysis of last frame
         """
         self.debug_stream("In Start()")
-        self._refresh_thread_state = 'runnig'
-        self._refresh_thread.start()
+        if self.get_state != DevState.FAULT:
+            self._refresh_thread_state = 'runnig'
+            self._refresh_thread.start()
+            self.set_state(DevState.RUNNING)
 
-        #----- PROTECTED REGION ID(LManalysis.Start) ENABLED START -----#
+        #----- PROTECTED REGION ID(LMAnalysis.Start) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.Start
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.Start
         
     def Stop(self):
         """ 
         """
         self.debug_stream("In Stop()")
         self._refresh_thread_state = 'stopped'
-        #----- PROTECTED REGION ID(LManalysis.Stop) ENABLED START -----#
+        self.set_state(DevState.ON)
+        #----- PROTECTED REGION ID(LMAnalysis.Stop) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.Stop
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.Stop
         
 
-    #----- PROTECTED REGION ID(LManalysis.programmer_methods) ENABLED START -----#
+    #----- PROTECTED REGION ID(LMAnalysis.programmer_methods) ENABLED START -----#
     
-    #----- PROTECTED REGION END -----#	//	LManalysis.programmer_methods
+    #----- PROTECTED REGION END -----#	//	LMAnalysis.programmer_methods
 
 class LManalysisClass(PyTango.DeviceClass):
     # -------- Add you global class variables here --------------------------
-    #----- PROTECTED REGION ID(LManalysis.global_class_variables) ENABLED START -----#
+    #----- PROTECTED REGION ID(LMAnalysis.global_class_variables) ENABLED START -----#
     
-    #----- PROTECTED REGION END -----#	//	LManalysis.global_class_variables
+    #----- PROTECTED REGION END -----#	//	LMAnalysis.global_class_variables
 
 
     #    Class Properties
@@ -428,7 +501,7 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
-                'description': "x coordinate of maxumum",
+                'description': "x coordinate of maximum",
             } ],
         'max_y':
             [[PyTango.DevDouble,
@@ -437,19 +510,33 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
+                'description': "y coordinate of maximum",
             } ],
         'max_intensity':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
-            PyTango.READ]],
+            PyTango.READ],
+            {
+                 'description': "maximum intensity value",
+             } ],
         'com_x':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
-            PyTango.READ]],
+            PyTango.READ],
+            {
+                'unit': "px",
+                'display unit': "px",
+                'description': "x coordinate of center of mass",
+            } ],
         'com_y':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
-            PyTango.READ]],
+            PyTango.READ],
+            {
+                'unit': "px",
+                'display unit': "px",
+                'description': "y coordinate of center of mass",
+            } ],
         'fwhm_x':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
@@ -457,6 +544,7 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
+                'description': "x size of FWHM",
             } ],
         'fwhm_y':
             [[PyTango.DevDouble,
@@ -465,39 +553,65 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
+                'description': "y size of FWHM",
             } ],
         'roi_sum':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
-            PyTango.READ]],
+            PyTango.READ],
+            {
+                'description': "sum of intensity over ROI",
+            } ],
         'scan_parameter':
             [[PyTango.DevString,
             PyTango.SCALAR,
             PyTango.READ_WRITE],
             {
-                'Memorized':"true_without_hard_applied"
+                'Memorized':"true",
+                'description': "could be: max_i; max_x; max_y; com_x; com_y; fwhm_x; fwhm_y; sum",
             } ],
         'value':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
             PyTango.READ]],
-        'roi':
-            [[PyTango.DevLong,
+        'roi_x':
+            [[PyTango.DevLong64,
             PyTango.SCALAR,
             PyTango.READ_WRITE],
             {
-                'Memorized':"true_without_hard_applied"
+                'Memorized':"true",
             } ],
+        'roi_y':
+            [[PyTango.DevLong64,
+              PyTango.SCALAR,
+              PyTango.READ_WRITE],
+             {
+                 'Memorized': "true",
+             }],
+        'roi_w':
+            [[PyTango.DevLong64,
+              PyTango.SCALAR,
+              PyTango.READ_WRITE],
+             {
+                 'Memorized': "true",
+             }],
+        'roi_h':
+            [[PyTango.DevLong64,
+              PyTango.SCALAR,
+              PyTango.READ_WRITE],
+             {
+                 'Memorized': "true",
+             }],
         }
 
 
 def main():
     try:
         py = PyTango.Util(sys.argv)
-        py.add_class(LManalysisClass, LManalysis, 'LManalysis')
-        #----- PROTECTED REGION ID(LManalysis.add_classes) ENABLED START -----#
+        py.add_class(LManalysisClass, LMAnalysis, 'LMAnalysis')
+        #----- PROTECTED REGION ID(LMAnalysis.add_classes) ENABLED START -----#
         
-        #----- PROTECTED REGION END -----#	//	LManalysis.add_classes
+        #----- PROTECTED REGION END -----#	//	LMAnalysis.add_classes
 
         U = PyTango.Util.instance()
         U.server_init()
