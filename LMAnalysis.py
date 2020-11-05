@@ -54,18 +54,6 @@ import sys
 # OFF : 
 # FAULT : 
 
-
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-# ----------------------------------------------------------------------
-# Author:        patrick.loemker@desy.de
-# Last modified: 2018, July 10
-# ----------------------------------------------------------------------
-
-"""TangotoTine camera proxy
-"""
-
 import numpy as np
 import scipy.ndimage.measurements as scipymeasure
 import PyTango
@@ -161,19 +149,28 @@ class TangoTineCamera(object):
                 roi_array = self._last_frame[x:x + w, y:y + h]
             except:
                 roi_array = self._last_frame
+                x, y = 0, 0
         else:
             roi_array = self._last_frame
+            x, y = 0, 0
 
         self.sum = np.sum(roi_array)
 
-        roiExtrema = scipymeasure.extrema(roi_array)
-        self.max_i = roiExtrema[1]
-        self.max_x = roiExtrema[3][0]
-        self.max_y = roiExtrema[3][1]
+        try:
+            roi_extrema = scipymeasure.extrema(roi_array)
+        except:
+            roi_extrema = (0, 0, (0, 0), (0, 0))
+        self.max_i = roi_extrema[1]
+        self.max_x = roi_extrema[3][0] + x
+        self.max_y = roi_extrema[3][1] + y
 
-        roiCoM = scipymeasure.center_of_mass(roi_array)
-        self.com_x = roiCoM[0]
-        self.com_y = roiCoM[1]
+        try:
+            roi_com = scipymeasure.center_of_mass(roi_array)
+        except:
+            roi_com = (0, 0)
+
+        self.com_x = roi_com[0] + x
+        self.com_y = roi_com[1] + y
 
         self.fwhm_x = FWHM(np.sum(roi_array, axis=0))
         self.fwhm_y = FWHM(np.sum(roi_array, axis=1))
