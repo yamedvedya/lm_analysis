@@ -147,7 +147,8 @@ class TangoTineCamera(object):
             try:
                 x, y, w, h, = self._roi
                 roi_array = self._last_frame[x:x + w, y:y + h]
-            except:
+            except Exception as err:
+                print('Exception roi_array: {}'.format(err))
                 roi_array = self._last_frame
                 x, y = 0, 0
         else:
@@ -158,7 +159,8 @@ class TangoTineCamera(object):
 
         try:
             roi_extrema = scipymeasure.extrema(roi_array)
-        except:
+        except Exception as err:
+            print('Exception roi_extrema: {}, x: {}, y: {}, w: {}, h: {}, _last_frame_shape: {}, roi_shape {}'.format(err, x, y, w, h, self._last_frame.shape, roi_array.shape))
             roi_extrema = (0, 0, (0, 0), (0, 0))
         self.max_i = roi_extrema[1]
         self.max_x = roi_extrema[3][0] + x
@@ -166,7 +168,8 @@ class TangoTineCamera(object):
 
         try:
             roi_com = scipymeasure.center_of_mass(roi_array)
-        except:
+        except Exception as err:
+            print('Exception roi_com: {}, x: {}, y: {}, w: {}, h: {}'.format(err, x, y, w, h))
             roi_com = (0, 0)
 
         self.com_x = roi_com[0] + x
@@ -177,7 +180,7 @@ class TangoTineCamera(object):
 
     # ----------------------------------------------------------------------
     def _read_frame(self):
-        self._last_frame = self.device_proxy.Frame
+        self._last_frame = np.transpose(self.device_proxy.Frame)
         self._analyse_image()
         self._last_refresh = time.time()
 
