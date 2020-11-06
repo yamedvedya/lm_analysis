@@ -43,6 +43,7 @@ __all__ = ["LMAnalysis", "LManalysisClass", "main"]
 __docformat__ = 'restructuredtext'
 
 import PyTango
+from distutils.util import strtobool
 import sys
 # Add additional import
 #----- PROTECTED REGION ID(LMAnalysis.additionnal_import) ENABLED START -----#
@@ -81,7 +82,7 @@ class TangoTineCamera(object):
     """
 
     # ----------------------------------------------------------------------
-    def __init__(self, tango_server, roi):
+    def __init__(self, tango_server, roi, h_flip, v_flip, rotate_angle):
         super(TangoTineCamera, self).__init__()
 
         self._last_frame = np.zeros((1, 1))
@@ -100,6 +101,12 @@ class TangoTineCamera(object):
         self.fwhm_x = 0
         self.fwhm_y = 0
         self.sum = 0
+
+        self._h_flip = h_flip
+        self._v_flip = v_flip
+        self._rotate_angle = rotate_angle
+
+        print([self._h_flip, self._v_flip, self._rotate_angle])
 
         try:
             self.device_proxy = PyTango.DeviceProxy(str(tango_server))
@@ -138,17 +145,18 @@ class TangoTineCamera(object):
         """
         data = event.device.read_attribute(event.attr_name.split('/')[6])
         self._last_frame = np.transpose(data.value)
+        self._rotate()
         self._analyse_image()
         self._last_refresh = time.time()
 
     # ----------------------------------------------------------------------
     def _analyse_image(self):
+
         if self._roi is not None:
             try:
                 x, y, w, h, = self._roi
                 roi_array = self._last_frame[x:x + w, y:y + h]
             except Exception as err:
-                print('Exception roi_array: {}'.format(err))
                 roi_array = self._last_frame
                 x, y = 0, 0
         else:
@@ -160,7 +168,6 @@ class TangoTineCamera(object):
         try:
             roi_extrema = scipymeasure.extrema(roi_array)
         except Exception as err:
-            print('Exception roi_extrema: {}, x: {}, y: {}, w: {}, h: {}, _last_frame_shape: {}, roi_shape {}'.format(err, x, y, w, h, self._last_frame.shape, roi_array.shape))
             roi_extrema = (0, 0, (0, 0), (0, 0))
         self.max_i = roi_extrema[1]
         self.max_x = roi_extrema[3][0] + x
@@ -169,7 +176,6 @@ class TangoTineCamera(object):
         try:
             roi_com = scipymeasure.center_of_mass(roi_array)
         except Exception as err:
-            print('Exception roi_com: {}, x: {}, y: {}, w: {}, h: {}'.format(err, x, y, w, h))
             roi_com = (0, 0)
 
         self.com_x = roi_com[0] + x
@@ -181,6 +187,7 @@ class TangoTineCamera(object):
     # ----------------------------------------------------------------------
     def _read_frame(self):
         self._last_frame = np.transpose(self.device_proxy.Frame)
+        self._rotate()
         self._analyse_image()
         self._last_refresh = time.time()
 
@@ -191,6 +198,19 @@ class TangoTineCamera(object):
 
         return getattr(self, attr)
 
+    # ----------------------------------------------------------------------
+    def _rotate(self):
+        if self._v_flip and self._h_flip:
+            self._last_frame = self._last_frame[::-1, ::-1]
+
+        elif self._v_flip:
+            self._last_frame = self._last_frame[::, ::-1]
+
+        elif self._h_flip:
+            self._last_frame = self._last_frame[::-1, :]
+
+        if self._rotate_angle:
+            self._last_frame = np.rot90(self._last_frame, self._rotate_angle)
 
 class LMAnalysis (PyTango.LatestDeviceImpl):
     """"""
@@ -204,15 +224,6 @@ class LMAnalysis (PyTango.LatestDeviceImpl):
         PyTango.LatestDeviceImpl.__init__(self,cl,name)
         self.debug_stream("In __init__()")
         LMAnalysis.init_device(self)
-
-        self.camera = TangoTineCamera(self.CameraDevice, None)
-        if self.camera.device_proxy is None:
-            self.set_state(DevState.FAULT)
-        else:
-            self.set_state(DevState.ON)
-
-        self._refresh_thread = Thread(target=self._refresh_data)
-        self._refresh_thread_state = 'stopped'
 
         #----- PROTECTED REGION ID(LMAnalysis.__init__) ENABLED START -----#
         
@@ -254,6 +265,17 @@ class LMAnalysis (PyTango.LatestDeviceImpl):
         self.attr_roi_y_read = 0
         self.attr_roi_h_read = 0
         self.attr_roi_w_read = 0
+
+        self.camera = TangoTineCamera(self.CameraDevice, None,
+                                      strtobool(self.Flip_H), strtobool(self.Flip_V), int(self.Rotate_Angle))
+        if self.camera.device_proxy is None:
+            self.set_state(DevState.FAULT)
+        else:
+            self.set_state(DevState.ON)
+
+        self._refresh_thread = Thread(target=self._refresh_data)
+        self._refresh_thread_state = 'stopped'
+
         #----- PROTECTED REGION ID(LMAnalysis.init_device) ENABLED START -----#
         
         #----- PROTECTED REGION END -----#	//	LMAnalysis.init_device
@@ -478,6 +500,18 @@ class LManalysisClass(PyTango.DeviceClass):
             [PyTango.DevString, 
             "Adress of related camera tango server",
             [] ],
+        'Flip_H':
+            [PyTango.DevString,
+             "",
+             []],
+        'Flip_V':
+            [PyTango.DevString,
+             "",
+             []],
+        'Rotate_Angle':
+            [PyTango.DevString,
+             "",
+             []],
         }
 
 
