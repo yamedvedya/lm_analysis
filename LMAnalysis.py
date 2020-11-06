@@ -106,8 +106,6 @@ class TangoTineCamera(object):
         self._v_flip = v_flip
         self._rotate_angle = rotate_angle
 
-        print([self._h_flip, self._v_flip, self._rotate_angle])
-
         try:
             self.device_proxy = PyTango.DeviceProxy(str(tango_server))
         except:
