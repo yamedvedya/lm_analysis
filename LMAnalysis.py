@@ -264,6 +264,15 @@ class LMAnalysis (PyTango.LatestDeviceImpl):
         self.attr_roi_h_read = 0
         self.attr_roi_w_read = 0
 
+        if not self.Flip_H:
+            self.Flip_H = 'False'
+
+        if not self.Flip_V:
+            self.Flip_V = 'False'
+
+        if not self.Rotate_Angle:
+            self.Rotate_Angle = '0'
+
         self.camera = TangoTineCamera(self.CameraDevice, None,
                                       strtobool(self.Flip_H), strtobool(self.Flip_V), int(self.Rotate_Angle))
         if self.camera.device_proxy is None:
