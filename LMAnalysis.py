@@ -42,9 +42,6 @@ __all__ = ["LMAnalysis", "LManalysisClass", "main"]
 
 __docformat__ = 'restructuredtext'
 
-import PyTango
-from distutils.util import strtobool
-import sys
 # Add additional import
 #----- PROTECTED REGION ID(LMAnalysis.additionnal_import) ENABLED START -----#
 
@@ -57,6 +54,7 @@ import sys
 
 import numpy as np
 import scipy.ndimage.measurements as scipymeasure
+import sys
 import PyTango
 import time
 from threading import Thread
@@ -265,16 +263,16 @@ class LMAnalysis (PyTango.LatestDeviceImpl):
         self.attr_roi_w_read = 0
 
         if not self.Flip_H:
-            self.Flip_H = 'False'
+            self.Flip_H = False
 
         if not self.Flip_V:
-            self.Flip_V = 'False'
+            self.Flip_V = False
 
         if not self.Rotate_Angle:
-            self.Rotate_Angle = '0'
+            self.Rotate_Angle = 0
 
         self.camera = TangoTineCamera(self.CameraDevice, None,
-                                      strtobool(self.Flip_H), strtobool(self.Flip_V), int(self.Rotate_Angle))
+                                      self.Flip_H, self.Flip_V, self.Rotate_Angle)
         if self.camera.device_proxy is None:
             self.set_state(DevState.FAULT)
         else:
@@ -504,21 +502,21 @@ class LManalysisClass(PyTango.DeviceClass):
     #    Device Properties
     device_property_list = {
         'CameraDevice':
-            [PyTango.DevString, 
+            [PyTango.DevString,
             "Adress of related camera tango server",
             [] ],
         'Flip_H':
-            [PyTango.DevString,
-             "",
-             []],
+            [PyTango.DevBoolean,
+            "define whether the source picture has to be flipped horizontally",
+            [False]],
         'Flip_V':
-            [PyTango.DevString,
-             "",
-             []],
+            [PyTango.DevBoolean,
+            "define whether the source picture has to be flipped vertically",
+            [False]],
         'Rotate_Angle':
-            [PyTango.DevString,
-             "",
-             []],
+            [PyTango.DevShort,
+            "define the rotation angle in 90 deg steps (!!). E.g. Rotate_Angle = 3 means 270 deg rotation",
+            [0]],
         }
 
 
@@ -542,7 +540,7 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
-                'description': "x coordinate of maximum",
+                'description': "x coordinate of intensity maxumum within ROI",
             } ],
         'max_y':
             [[PyTango.DevDouble,
@@ -551,32 +549,28 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
-                'description': "y coordinate of maximum",
+                'description': "y coordinate of intensity maxumum within ROI",
             } ],
         'max_intensity':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
             PyTango.READ],
             {
-                 'description': "maximum intensity value",
-             } ],
+                'description': "maxumum intensity value in ROI",
+            } ],
         'com_x':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
             PyTango.READ],
             {
-                'unit': "px",
-                'display unit': "px",
-                'description': "x coordinate of center of mass",
+                'description': "x coordinate of ROI's center of mass",
             } ],
         'com_y':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
             PyTango.READ],
             {
-                'unit': "px",
-                'display unit': "px",
-                'description': "y coordinate of center of mass",
+                'description': "y coordinate of ROI's center of mass",
             } ],
         'fwhm_x':
             [[PyTango.DevDouble,
@@ -585,7 +579,7 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
-                'description': "x size of FWHM",
+                'description': "horizontal size of peak wihtin ROI",
             } ],
         'fwhm_y':
             [[PyTango.DevDouble,
@@ -594,7 +588,7 @@ class LManalysisClass(PyTango.DeviceClass):
             {
                 'unit': "px",
                 'display unit': "px",
-                'description': "y size of FWHM",
+                'description': "vertical size of peak wihtin ROI",
             } ],
         'roi_sum':
             [[PyTango.DevDouble,
@@ -608,41 +602,53 @@ class LManalysisClass(PyTango.DeviceClass):
             PyTango.SCALAR,
             PyTango.READ_WRITE],
             {
-                'Memorized':"true",
-                'description': "could be: max_i; max_x; max_y; com_x; com_y; fwhm_x; fwhm_y; sum",
+                'description': "which parameter will be use as a `source` for Sardana. Can be `max_i`, `max_x`, `max_y`, `com_x`, `com_y`, `fwhm_x`, `fwhm_y`, `sum`",
+                'Memorized':"true"
             } ],
         'value':
             [[PyTango.DevDouble,
             PyTango.SCALAR,
-            PyTango.READ]],
+            PyTango.READ],
+            {
+                'description': "value to be passed to Sardana",
+            } ],
         'roi_x':
-            [[PyTango.DevLong64,
+            [[PyTango.DevLong,
             PyTango.SCALAR,
             PyTango.READ_WRITE],
             {
-                'Memorized':"true",
+                'unit': "px",
+                'display unit': "px",
+                'description': "x coordinate of left top ROI corner",
+                'Memorized':"true"
             } ],
         'roi_y':
-            [[PyTango.DevLong64,
-              PyTango.SCALAR,
-              PyTango.READ_WRITE],
-             {
-                 'Memorized': "true",
-             }],
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ_WRITE],
+            {
+                'unit': "px",
+                'display unit': "px",
+                'description': "y coordinate of left top ROI corner",
+            } ],
         'roi_w':
-            [[PyTango.DevLong64,
-              PyTango.SCALAR,
-              PyTango.READ_WRITE],
-             {
-                 'Memorized': "true",
-             }],
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ_WRITE],
+            {
+                'unit': "px",
+                'display unit': "px",
+                'description': "ROI width",
+            } ],
         'roi_h':
-            [[PyTango.DevLong64,
-              PyTango.SCALAR,
-              PyTango.READ_WRITE],
-             {
-                 'Memorized': "true",
-             }],
+            [[PyTango.DevDouble,
+            PyTango.SCALAR,
+            PyTango.READ],
+            {
+                'unit': "px",
+                'display unit': "px",
+                'description': "ROI height",
+            } ],
         }
 
 

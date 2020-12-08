@@ -4,15 +4,18 @@ This is small server to do simple analysis of 2d images, which can be taken from
 The server is better to use with the CameraViewer utility.
 
 Installation:
-To start server the 4 parameters has to be provided:
 
-"CameraDevice" - the tango address of image source
-The following settings are needed to work with CameraViewer, which update them automatically during start. In case you use server without CameraViewer better to set it to False (or 0) to avoid confusions.
+To start server the "CameraDevice" attribute - the tango address of image source - has to be provided:
 
-"Flip_H" - define whether the source picture has to be flipped horizontally. Could be True or False.
-"Flip_V" -  define whether the source picture has to be flipped vertically. Could be True or False.
-"Rotate_Angle" - define the rotation angle in 90 deg steps (!!). E.g. Rotate_Angle = 3 means 270 deg rotation
+In case you use this server with CameraViewer, you need to add 3 more attributes: 
+
+"Flip_H" - define whether the source picture has to be flipped horizontally. Could be True or False. 
+"Flip_V" -  define whether the source picture has to be flipped vertically. Could be True or False. 
+"Rotate_Angle" - define the rotation angle in 90 deg steps (!!). E.g. Rotate_Angle = 3 means 270 deg rotation
+The CameraViewer updates them automatically during start.
+
 Operation:
+
 The analysis is performed in the rectangle, defined by roi_x, roi_y, roi_w, roi_h attributes. In case if the roi_w, roi_h are 0 - the whole picture is analyzed.
 
 The following parameters are calculated:
