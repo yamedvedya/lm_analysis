@@ -5,14 +5,7 @@ The server is better to use with the CameraViewer utility.
 
 Installation:
 
-To start server the "CameraDevice" attribute - the tango address of image source - has to be provided:
-
-In case you use this server with CameraViewer, you need to add 3 more attributes: 
-
-"Flip_H" - define whether the source picture has to be flipped horizontally. Could be True or False. 
-"Flip_V" -  define whether the source picture has to be flipped vertically. Could be True or False. 
-"Rotate_Angle" - define the rotation angle in 90 deg steps (!!). E.g. Rotate_Angle = 3 means 270 deg rotation
-The CameraViewer updates them automatically during start.
+To start server the "CameraDevice" attribute - the tango address of image source - has to be provided:
 
 Operation:
 

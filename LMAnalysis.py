@@ -51,7 +51,7 @@ import numpy as np
 import scipy.ndimage.measurements as scipymeasure
 import time
 from threading import Thread
-from tango import AttrQuality, AttrWriteType, DispLevel, DevState, DebugIt
+from tango import DevState
 
 
 POLL_PERIOD = 200
@@ -73,7 +73,7 @@ class TangoTineCamera(object):
     """
 
     # ----------------------------------------------------------------------
-    def __init__(self, tango_server, roi, h_flip, v_flip, rotate_angle):
+    def __init__(self, tango_server, roi):
         super(TangoTineCamera, self).__init__()
 
         self._last_frame = np.zeros((1, 1))
@@ -92,10 +92,6 @@ class TangoTineCamera(object):
         self.fwhm_x = 0
         self.fwhm_y = 0
         self.sum = 0
-
-        self._h_flip = h_flip
-        self._v_flip = v_flip
-        self._rotate_angle = rotate_angle
 
         try:
             self.device_proxy = PyTango.DeviceProxy(str(tango_server))
@@ -176,7 +172,6 @@ class TangoTineCamera(object):
     # ----------------------------------------------------------------------
     def _read_frame(self):
         self._last_frame = np.transpose(self.device_proxy.Frame)
-        self._rotate()
         self._analyse_image()
         self._last_refresh = time.time()
 
@@ -187,20 +182,6 @@ class TangoTineCamera(object):
 
         return getattr(self, attr)
 
-    # ----------------------------------------------------------------------
-    def _rotate(self):
-        if self._v_flip and self._h_flip:
-            self._last_frame = self._last_frame[::-1, ::-1]
-
-        elif self._v_flip:
-            self._last_frame = self._last_frame[::, ::-1]
-
-        elif self._h_flip:
-            self._last_frame = self._last_frame[::-1, :]
-
-        if self._rotate_angle:
-            self._last_frame = np.rot90(self._last_frame, self._rotate_angle)
-
 #----- PROTECTED REGION END -----#	//	LMAnalysis.additionnal_import
 
 # Device States Description
@@ -209,28 +190,16 @@ class TangoTineCamera(object):
 # FAULT : 
 
 
-class LMAnalysis (PyTango.LatestDeviceImpl):
+class LMAnalysis (PyTango.Device_4Impl):
     """"""
     
     # -------- Add you global variables here --------------------------
     #----- PROTECTED REGION ID(LMAnalysis.global_variables) ENABLED START -----#
-
-    def _refresh_data(self):
-        while self._refresh_thread_state != 'stopped':
-            time.sleep(POLL_PERIOD/1000)
-            self.attr_max_x_read = self.camera.get_data('max_x')
-            self.attr_max_y_read = self.camera.get_data('max_y')
-            self.attr_max_intensity_read = self.camera.get_data('max_i')
-            self.attr_com_x_read = self.camera.get_data('com_x')
-            self.attr_com_y_read = self.camera.get_data('com_y')
-            self.attr_fwhm_x_read = self.camera.get_data('fwhm_x')
-            self.attr_fwhm_y_read = self.camera.get_data('fwhm_y')
-            self.attr_roi_sum_read = self.camera.get_data('sum')
-
+    
     #----- PROTECTED REGION END -----#	//	LMAnalysis.global_variables
 
     def __init__(self, cl, name):
-        PyTango.LatestDeviceImpl.__init__(self,cl,name)
+        PyTango.Device_4Impl.__init__(self,cl,name)
         self.debug_stream("In __init__()")
         LMAnalysis.init_device(self)
         #----- PROTECTED REGION ID(LMAnalysis.__init__) ENABLED START -----#
@@ -262,17 +231,8 @@ class LMAnalysis (PyTango.LatestDeviceImpl):
         self.attr_roi_h_read = 0.0
         #----- PROTECTED REGION ID(LMAnalysis.init_device) ENABLED START -----#
 
-        if not self.Flip_H:
-            self.Flip_H = False
-
-        if not self.Flip_V:
-            self.Flip_V = False
-
-        if not self.Rotate_Angle:
-            self.Rotate_Angle = 0
-
-        self.camera = TangoTineCamera(self.CameraDevice, None,
-                                      self.Flip_H, self.Flip_V, self.Rotate_Angle)
+        self.camera = TangoTineCamera(self.CameraDevice, None
+                                      )
         if self.camera.device_proxy is None:
             self.set_state(DevState.FAULT)
         else:
@@ -280,6 +240,7 @@ class LMAnalysis (PyTango.LatestDeviceImpl):
 
         self._refresh_thread = Thread(target=self._refresh_data)
         self._refresh_thread_state = 'stopped'
+
 
         #----- PROTECTED REGION END -----#	//	LMAnalysis.init_device
 
@@ -482,7 +443,19 @@ class LMAnalysis (PyTango.LatestDeviceImpl):
         
 
     #----- PROTECTED REGION ID(LMAnalysis.programmer_methods) ENABLED START -----#
-    
+
+    def _refresh_data(self):
+        while self._refresh_thread_state != 'stopped':
+            time.sleep(POLL_PERIOD / 1000)
+            self.attr_max_x_read = self.camera.get_data('max_x')
+            self.attr_max_y_read = self.camera.get_data('max_y')
+            self.attr_max_intensity_read = self.camera.get_data('max_i')
+            self.attr_com_x_read = self.camera.get_data('com_x')
+            self.attr_com_y_read = self.camera.get_data('com_y')
+            self.attr_fwhm_x_read = self.camera.get_data('fwhm_x')
+            self.attr_fwhm_y_read = self.camera.get_data('fwhm_y')
+            self.attr_roi_sum_read = self.camera.get_data('sum')
+
     #----- PROTECTED REGION END -----#	//	LMAnalysis.programmer_methods
 
 class LMAnalysisClass(PyTango.DeviceClass):
@@ -503,18 +476,6 @@ class LMAnalysisClass(PyTango.DeviceClass):
             [PyTango.DevString, 
             "Adress of related camera tango server",
             [] ],
-        'Flip_H':
-            [PyTango.DevBoolean, 
-            "define whether the source picture has to be flipped horizontally",
-            [False]],
-        'Flip_V':
-            [PyTango.DevBoolean, 
-            "define whether the source picture has to be flipped vertically",
-            [False]],
-        'Rotate_Angle':
-            [PyTango.DevShort, 
-            "define the rotation angle in 90 deg steps (!!). E.g. Rotate_Angle = 3 means 270 deg rotation",
-            [0]],
         }
 
 
